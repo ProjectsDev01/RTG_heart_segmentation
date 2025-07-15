@@ -77,72 +77,80 @@ def calculate_metrics(pred, target):
     
     return accuracy.item(), dice.item(), iou.item()
 
-# --- MODEL CNN DO SEGMENTACJI ---
+# --- MODEL CNN DO SEGMENTACJI Z DROPOUT ---
 class SegmentationCNN(nn.Module):
     def __init__(self):
         super(SegmentationCNN, self).__init__()
-        # Encoder
+        # Encoder z dropout
         self.conv1 = nn.Sequential(
             nn.Conv2d(1, 32, kernel_size=3, padding=1),
             nn.BatchNorm2d(32),
             nn.ReLU(),
-            nn.MaxPool2d(2)
-        )  # -> 32 x 128 x 128
+            nn.MaxPool2d(2),
+            # nn.Dropout(0.1)  # Dodany dropout
+        )
         self.conv2 = nn.Sequential(
             nn.Conv2d(32, 64, kernel_size=3, padding=1),
             nn.BatchNorm2d(64),
             nn.ReLU(),
-            nn.MaxPool2d(2)
-        )  # -> 64 x 64 x 64
+            nn.MaxPool2d(2),
+            # nn.Dropout(0.1)  # Dodany dropout
+        )
         self.conv3 = nn.Sequential(
             nn.Conv2d(64, 128, kernel_size=3, padding=1),
             nn.BatchNorm2d(128),
             nn.ReLU(),
-            nn.MaxPool2d(2)
-        )  # -> 128 x 32 x 32
+            nn.MaxPool2d(2),
+            # nn.Dropout(0.1)  # Dodany dropout
+        )
         
-        # Bottleneck
+        # Bottleneck z dropout
         self.bottleneck = nn.Sequential(
             nn.Conv2d(128, 256, kernel_size=3, padding=1),
             nn.BatchNorm2d(256),
-            nn.ReLU()
-        )  # -> 256 x 32 x 32
+            nn.ReLU(),
+            nn.Dropout(0.1)  # Dodany dropout
+        )
         
-        # Decoder
-        self.up1 = nn.ConvTranspose2d(256, 128, kernel_size=2, stride=2)  # -> 128 x 64 x 64
+        # Decoder z dropout
+        self.up1 = nn.ConvTranspose2d(256, 128, kernel_size=2, stride=2)
         self.dec1 = nn.Sequential(
             nn.Conv2d(128, 128, kernel_size=3, padding=1),
             nn.BatchNorm2d(128),
-            nn.ReLU()
+            nn.ReLU(),
+            # nn.Dropout(0.1)  # Dodany dropout
         )
-        self.up2 = nn.ConvTranspose2d(128, 64, kernel_size=2, stride=2)  # -> 64 x 128 x 128
+        self.up2 = nn.ConvTranspose2d(128, 64, kernel_size=2, stride=2)
         self.dec2 = nn.Sequential(
             nn.Conv2d(64, 64, kernel_size=3, padding=1),
             nn.BatchNorm2d(64),
-            nn.ReLU()
+            nn.ReLU(),
+            # nn.Dropout(0.1)  # Dodany dropout
         )
-        self.up3 = nn.ConvTranspose2d(64, 32, kernel_size=2, stride=2)  # -> 32 x 256 x 256
+        self.up3 = nn.ConvTranspose2d(64, 32, kernel_size=2, stride=2)
         self.dec3 = nn.Sequential(
             nn.Conv2d(32, 32, kernel_size=3, padding=1),
             nn.BatchNorm2d(32),
-            nn.ReLU()
+            nn.ReLU(),
+            # nn.Dropout(0.1)  # Dodany dropout
         )
         self.out_conv = nn.Conv2d(32, 1, kernel_size=1)
     
     def forward(self, x):
-        x1 = self.conv1(x)  # 32 x 128 x 128
-        x2 = self.conv2(x1) # 64 x 64 x 64
-        x3 = self.conv3(x2) # 128 x 32 x 32
-        x4 = self.bottleneck(x3)  # 256 x 32 x 32
-        x = self.up1(x4)   # 128 x 64 x 64
+        # Forward pass pozostaje bez zmian
+        x1 = self.conv1(x)
+        x2 = self.conv2(x1)
+        x3 = self.conv3(x2)
+        x4 = self.bottleneck(x3)
+        x = self.up1(x4)
         x = self.dec1(x)
-        x = self.up2(x)    # 64 x 128 x 128
+        x = self.up2(x)
         x = self.dec2(x)
-        x = self.up3(x)    # 32 x 256 x 256
+        x = self.up3(x)
         x = self.dec3(x)
         x = self.out_conv(x)
         return x
-
+    
 # --- FUNKCJA STRATY ---
 class DiceBCELoss(nn.Module):
     def __init__(self):

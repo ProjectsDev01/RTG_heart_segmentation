@@ -2,6 +2,7 @@ import os
 import glob
 import numpy as np
 from PIL import Image
+import cv2
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -25,7 +26,7 @@ class HeartDataset(Dataset):
         self.mask_paths = sorted(glob.glob(os.path.join(root_dir, 'landmarks', '*.npy')))
         self.img_size = img_size
         
-        # Transformacja: skalowanie + normalizacja
+        # Transformacja: skalowanie + normalizacja dla obrazów
         self.image_transform = transforms.Compose([
             transforms.Resize((img_size, img_size)),
             transforms.ToTensor(),
@@ -37,18 +38,26 @@ class HeartDataset(Dataset):
         return len(self.image_paths)
 
     def __getitem__(self, idx):
-        # Wczytanie obrazu w trybie RGB
-        img = Image.open(self.image_paths[idx]).convert('RGB')
-        img = self.image_transform(img)
+        # Wczytanie obrazu w trybie RGB i transformacja
+        img_path = self.image_paths[idx]
+        img_pil = Image.open(img_path).convert('RGB')
+        orig_w, orig_h = img_pil.size  # oryginalny rozmiar obrazu
+        image = self.image_transform(img_pil)
         
-        # Wczytanie maski (z pliku .npy) i przeskalowanie
-        mask_array = np.load(self.mask_paths[idx])  # zakładamy, że to tablica 0/1
-        mask_img = Image.fromarray(mask_array.astype(np.uint8)).resize(
-            (self.img_size, self.img_size), Image.NEAREST
-        )
-        mask = transforms.ToTensor()(mask_img)  # [1, H, W] (wartości 0 lub 1)
+        # Wczytanie punktów konturu z pliku .npy
+        mask_path = self.mask_paths[idx]
+        points = np.load(mask_path, allow_pickle=True)
         
-        return img, mask
+        # Tworzenie maski na oryginalnym rozmiarze
+        mask_np = np.zeros((orig_h, orig_w), dtype=np.uint8)
+        if points.size > 0:
+            cv2.fillPoly(mask_np, [points.astype(np.int32)], color=255)
+        # Konwersja do PIL i zmiana rozmiaru z NEAREST
+        mask_img = Image.fromarray(mask_np)
+        mask_img = mask_img.resize((self.img_size, self.img_size), Image.NEAREST)
+        mask = transforms.ToTensor()(mask_img)  # [1, H, W], wartości w [0,1]
+        
+        return image, mask
 
 # --------------------
 # 2. Metryki
@@ -58,8 +67,8 @@ def calculate_metrics(pred, target):
     pred, target: [batch_size, 1, H, W]
     Zwraca: (accuracy, dice, iou, hd_mean, hd95_mean)
     """
-    # Sigmoid + progowanie
-    pred_bin = (torch.sigmoid(pred) > 0.5).float()
+    # Zakładamy, że pred są już prawdopodobieństwami (po Sigmoid), więc progowanie bez dodatkowej sigmoidy
+    pred_bin = (pred > 0.5).float()
     target = target.float()
     
     # Podstawowe metryki
@@ -126,7 +135,7 @@ def main():
     )
     
     # --------------------
-    # 3.1. Wczytanie U-Net z mateuszbuda/brain-segmentation-pytorch
+    # 3.1. Wczytanie U-Net
     # --------------------
     model = torch.hub.load(
         'mateuszbuda/brain-segmentation-pytorch',
@@ -134,20 +143,20 @@ def main():
         in_channels=3,
         out_channels=1,
         init_features=32,
-        pretrained=True  # Uwaga: pretrained na MRI, można ustawić False
+        pretrained=True  # lub False, jeśli nie chcemy wag pretrained
     )
     model = model.to(device)
     
     # --------------------
     # 3.2. Funkcja straty i optymalizator
     # --------------------
-    criterion = nn.BCEWithLogitsLoss()
+    criterion = nn.BCELoss()  # zamiast BCEWithLogitsLoss, bo model zwraca prawdopodobieństwa:contentReference[oaicite:1]{index=1}
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     # scheduler obniży learning rate, jeśli val_loss nie poprawi się przez 3 epoki
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=3)
     
     best_dice = 0.0
-
+    
     # Listy do zapisu metryk z epok
     train_loss_list = []
     val_loss_list = []

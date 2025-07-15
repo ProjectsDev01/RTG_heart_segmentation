@@ -162,7 +162,7 @@ test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False)
 
 # --- ZAŁADOWANIE MODELU ---
 model = SegmentationCNN().to(DEVICE)
-model.load_state_dict(torch.load("models/cnn_model_100e_8b.pth", map_location=DEVICE))
+model.load_state_dict(torch.load("best_cnn_model.pth", map_location=DEVICE))
 model.eval()
 
 # --- TESTOWANIE I METRYKI ---
